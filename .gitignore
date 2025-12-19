@@ -89,3 +89,6 @@ dmypy.json
 # OS
 .DS_Store
 *.log
+
+# AI Agent configurations
+.continue/
