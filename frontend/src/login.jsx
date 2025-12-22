@@ -61,7 +61,8 @@ const Login = () => {
         setIsLoading(true);
 
         try {
-            const response = await fetch('http://localhost:8000/api/v1/auth/login', {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -98,7 +99,8 @@ const Login = () => {
 
                 // Check if user has investment account by trying to fetch dashboard data
                 try {
-                    const dashboardResponse = await fetch('http://localhost:8000/api/v1/dashboard/data', {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+                    const dashboardResponse = await fetch(`${API_BASE_URL}/dashboard/data`, {
                         headers: {
                             'Authorization': `Bearer ${data.session_token}`,
                             'Content-Type': 'application/json'
@@ -138,7 +140,8 @@ const Login = () => {
         // Redirect to Google OAuth endpoint
         // Using a short timeout to ensure the disabled state renders before navigation
         setTimeout(() => {
-            window.location.href = 'http://localhost:8000/api/v1/auth/google/login';
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            window.location.href = `${API_BASE_URL}/auth/google/login`;
         }, 50);
     };
 

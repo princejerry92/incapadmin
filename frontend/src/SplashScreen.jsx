@@ -31,7 +31,7 @@ export default function SplashScreen() {
   useEffect(() => {
     if (networkAvailable === true && progress === 100) {
       const timer = setTimeout(() => {
-        navigate('/login');
+        navigate('/admin/login');
       }, 1000); // Brief delay to show 100% progress
 
       return () => clearTimeout(timer);
@@ -59,7 +59,12 @@ export default function SplashScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-      const response = await fetch('http://localhost:8000/health', {  // Changed port back to 8000
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+      // Extract origin for health check if it's not a versioned path, 
+      // or just use the base URL. Usually health is at root.
+      const healthUrl = API_BASE_URL.replace('/api/v1', '') + '/health';
+
+      const response = await fetch(healthUrl, {
         method: 'GET',
         signal: controller.signal,
         headers: {

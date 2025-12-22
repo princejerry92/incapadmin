@@ -10,7 +10,8 @@ const AdminTransactions = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch('http://localhost:8000/admin/pending-withdrawals', {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/pending-withdrawals`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -36,7 +37,8 @@ const AdminTransactions = () => {
 
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`http://localhost:8000/admin/approve-withdrawal/${id}`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/approve-withdrawal/${id}`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -58,7 +60,8 @@ const AdminTransactions = () => {
 
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`http://localhost:8000/admin/reject-withdrawal/${id}?rejection_reason=${encodeURIComponent(reason)}`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/reject-withdrawal/${id}?rejection_reason=${encodeURIComponent(reason)}`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -74,10 +77,33 @@ const AdminTransactions = () => {
         }
     };
 
+    const handlePay = async (id, amount, name) => {
+        if (!window.confirm(`Are you sure you want to initiate a payout of ₦${amount.toLocaleString()} to ${name}?`)) return;
+
+        try {
+            const token = localStorage.getItem('adminToken');
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/pay-withdrawal/${id}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Payout initiated successfully!');
+                fetchTransactions(); // Refresh list
+            } else {
+                alert(data.detail || 'Payout failed');
+            }
+        } catch (err) {
+            alert('Network error during payout');
+        }
+    };
+
     return (
         <div className="admin-card">
             <div className="admin-header">
-                <h3>Pending Withdrawals</h3>
+                <h3>Withdrawal Management</h3>
                 <button className="admin-btn-secondary" onClick={fetchTransactions}>Refresh</button>
             </div>
 
@@ -88,7 +114,7 @@ const AdminTransactions = () => {
             ) : (
                 <div className="admin-table-container">
                     {transactions.length === 0 ? (
-                        <p>No pending withdrawals.</p>
+                        <p>No pending or processing withdrawals.</p>
                     ) : (
                         <table className="admin-table">
                             <thead>
@@ -97,6 +123,7 @@ const AdminTransactions = () => {
                                     <th>Investor</th>
                                     <th>Amount</th>
                                     <th>Bank Details</th>
+                                    <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -117,20 +144,38 @@ const AdminTransactions = () => {
                                             </small>
                                         </td>
                                         <td>
-                                            <button
-                                                className="admin-btn-primary"
-                                                style={{ backgroundColor: '#2ecc71', marginRight: '5px' }}
-                                                onClick={() => handleApprove(t.transaction_id)}
-                                            >
-                                                Approve
-                                            </button>
-                                            <button
-                                                className="admin-btn-primary"
-                                                style={{ backgroundColor: '#e74c3c' }}
-                                                onClick={() => handleReject(t.transaction_id)}
-                                            >
-                                                Reject
-                                            </button>
+                                            <span className={`status-badge ${t.status}`}>
+                                                {t.status}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {t.status === 'pending' && (
+                                                <>
+                                                    <button
+                                                        className="admin-btn-primary"
+                                                        style={{ backgroundColor: '#2ecc71', marginRight: '5px' }}
+                                                        onClick={() => handleApprove(t.transaction_id)}
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                    <button
+                                                        className="admin-btn-primary"
+                                                        style={{ backgroundColor: '#e74c3c' }}
+                                                        onClick={() => handleReject(t.transaction_id)}
+                                                    >
+                                                        Reject
+                                                    </button>
+                                                </>
+                                            )}
+                                            {t.status === 'processing' && (
+                                                <button
+                                                    className="admin-btn-primary"
+                                                    style={{ backgroundColor: '#3498db', marginRight: '5px' }}
+                                                    onClick={() => handlePay(t.transaction_id, t.amount, t.investor_name)}
+                                                >
+                                                    Pay Now
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

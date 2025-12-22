@@ -11,9 +11,10 @@ const AdminPayments = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
             const url = searchQuery
-                ? `http://localhost:8000/admin/payments?search=${searchQuery}`
-                : 'http://localhost:8000/admin/payments';
+                ? `${API_BASE_URL}/admin/payments?search=${searchQuery}`
+                : `${API_BASE_URL}/admin/payments`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }

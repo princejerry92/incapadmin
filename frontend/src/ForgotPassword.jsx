@@ -17,7 +17,7 @@ const ForgotPassword = () => {
     const checkScreenSize = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
@@ -39,7 +39,8 @@ const ForgotPassword = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/forgot-password/request', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password/request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -81,8 +82,8 @@ const ForgotPassword = () => {
 
   const containerStyle = {
     minHeight: '100vh',
-    background: isMobile 
-      ? 'white' 
+    background: isMobile
+      ? 'white'
       : 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 30%, #059669 100%)',
     display: 'flex',
     alignItems: 'center',
@@ -163,7 +164,7 @@ const ForgotPassword = () => {
         style={cardStyle}
         initial={{ y: 50, opacity: 0, scale: 0.95 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
-        transition={{ 
+        transition={{
           duration: 0.6,
           ease: [0.25, 0.46, 0.45, 0.94]
         }}

@@ -13,6 +13,8 @@ import uuid
 
 from ..core.config import settings
 from .notification_service import NotificationService
+from .paystack_service import paystack_service
+
 
 try:
     from supabase import create_client
@@ -293,6 +295,105 @@ class TransactionService:
 
         except Exception as e:
             return {'success': False, 'error': f'Error recording withdrawal request: {str(e)}'}
+
+    def process_payout(self, transaction_id: str) -> Dict[str, Any]:
+        """Process a payout for a withdrawal via Paystack.
+
+        Args:
+            transaction_id: The transaction ID
+
+        Returns:
+            Dict with success status and data/error
+        """
+        try:
+            if self.supabase is None:
+                return {'success': False, 'error': 'Supabase client not initialized'}
+
+            # Get transaction details
+            tx_resp = self.supabase.table('transactions').select('*').eq('transaction_id', transaction_id).execute()
+            
+            tx_data = getattr(tx_resp, 'data', [])
+            if not tx_data:
+                return {'success': False, 'error': 'Transaction not found'}
+            
+            transaction = tx_data[0]
+            
+            # Verify status
+            if transaction.get('withdraw_status') not in ['pending', 'processing']:
+                return {'success': False, 'error': f"Invalid status for payout: {transaction.get('withdraw_status')}"}
+                
+            investor_id = transaction.get('investor_id')
+            amount = float(transaction.get('amount', 0))
+            
+            # Get investor bank details
+            inv_resp = self.supabase.table('investors').select('bank_name, bank_account_number, bank_account_name, email').eq('id', investor_id).execute()
+            inv_data = getattr(inv_resp, 'data', [])
+            if not inv_data:
+                return {'success': False, 'error': 'Investor details not found'}
+                
+            investor = inv_data[0]
+            bank_name = investor.get('bank_name')
+            account_number = investor.get('bank_account_number')
+            account_name = investor.get('bank_account_name')
+            
+            if not bank_name or not account_number:
+                return {'success': False, 'error': 'Missing bank details for investor'}
+                
+            # 1. Resolve Bank Code
+            bank_code = paystack_service.resolve_bank_code(bank_name)
+            if not bank_code:
+                return {'success': False, 'error': f"Could not resolve bank code for '{bank_name}'. Please verify bank name."}
+                
+            # 2. Create Transfer Recipient
+            recipient_resp = paystack_service.create_transfer_recipient(
+                name=account_name or "Investor",
+                account_number=account_number,
+                bank_code=bank_code
+            )
+            
+            if not recipient_resp['status']:
+                return {'success': False, 'error': f"Failed to create transfer recipient: {recipient_resp.get('message')}"}
+                
+            recipient_code = recipient_resp['data'].get('recipient_code')
+            
+            # 3. Initiate Transfer
+            # Amount in kobo
+            amount_kobo = int(amount * 100)
+            reference = f"TRF-{uuid.uuid4().hex[:12].upper()}"
+            
+            transfer_resp = paystack_service.initiate_transfer(
+                amount=amount_kobo,
+                recipient_code=recipient_code,
+                reason=f"Withdrawal for {transaction_id}",
+                reference=reference
+            )
+            
+            if not transfer_resp['status']:
+                return {'success': False, 'error': f"Transfer initiation failed: {transfer_resp.get('message')}"}
+                
+            transfer_data = transfer_resp['data']
+            paystack_ref = transfer_data.get('transfer_code') or transfer_data.get('reference') or reference
+            
+            # 4. Update Transaction
+            # Update status to 'sent' and save reference
+            result = self.update_withdrawal_status(transaction_id, 'sent')
+            if not result['success']:
+                return result
+                
+            # Also update the paystack_ref
+            self.supabase.table('transactions').update({
+                'paystack_ref': paystack_ref,
+                'paystack_status': 'success' # Or 'pending' depending on if we want to wait for webhook
+            }).eq('transaction_id', transaction_id).execute()
+            
+            return {
+                'success': True,
+                'message': 'Payout initiated successfully',
+                'data': transfer_data
+            }
+
+        except Exception as e:
+            return {'success': False, 'error': f'Error processing payout: {str(e)}'}
 
     def update_withdrawal_status(self, transaction_id: str, status: str, failure_reason: Optional[str] = None) -> Dict[str, Any]:
         """Update the status of a withdrawal transaction.

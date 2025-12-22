@@ -15,7 +15,8 @@ export const AdminRealtimeProvider = ({ children }) => {
                 const token = localStorage.getItem('adminToken');
                 if (!token) return;
 
-                const response = await fetch('http://localhost:8000/admin/config', {
+                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+                const response = await fetch(`${API_BASE_URL}/admin/config`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();

@@ -3,7 +3,7 @@ import { Check, CreditCard, Shield, Lock, Loader, CheckCircle, AlertCircle } fro
 import { useNavigate } from 'react-router-dom';
 
 // Payment Service
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 const paymentService = {
   async initializePayment(paymentData) {

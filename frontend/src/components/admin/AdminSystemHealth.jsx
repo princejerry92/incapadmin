@@ -20,7 +20,7 @@ const apiCall = async (endpoint, method = 'GET', body = null) => {
     if (body) config.body = JSON.stringify(body);
 
     // Adjust base URL as needed or assume relative path proxy
-    const BASE_URL = 'http://localhost:8000';
+    const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
     const res = await fetch(`${BASE_URL}${endpoint}`, config);
     return res.json();
 };

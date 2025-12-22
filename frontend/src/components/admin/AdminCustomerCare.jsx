@@ -39,9 +39,10 @@ const AdminCustomerCare = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
             const url = searchQuery
-                ? `http://localhost:8000/admin/customer-care?search=${searchQuery}`
-                : 'http://localhost:8000/admin/customer-care';
+                ? `${API_BASE_URL}/admin/customer-care?search=${searchQuery}`
+                : `${API_BASE_URL}/admin/customer-care`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -72,7 +73,8 @@ const AdminCustomerCare = () => {
     const handleStatusChange = async (id, newStatus) => {
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`http://localhost:8000/admin/customer-care/${id}`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/customer-care/${id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -101,7 +103,8 @@ const AdminCustomerCare = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`http://localhost:8000/admin/customer-care/${answeringId}`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/customer-care/${answeringId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',

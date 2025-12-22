@@ -13,9 +13,10 @@ const AdminPortfolio = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
             const url = searchQuery
-                ? `http://localhost:8000/admin/portfolio?search=${searchQuery}`
-                : 'http://localhost:8000/admin/portfolio';
+                ? `${API_BASE_URL}/admin/portfolio?search=${searchQuery}`
+                : `${API_BASE_URL}/admin/portfolio`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -52,7 +53,8 @@ const AdminPortfolio = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`http://localhost:8000/admin/portfolio/${editingId}`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/portfolio/${editingId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',

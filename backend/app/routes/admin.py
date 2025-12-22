@@ -53,7 +53,7 @@ async def get_pending_withdrawals(
 
         response = supabase_client.table('transactions')\
             .select('*')\
-            .eq('withdraw_status', 'pending')\
+            .in_('withdraw_status', ['pending', 'processing'])\
             .eq('transaction_type', 'withdrawal')\
             .order('created_at', desc=True)\
             .execute()
@@ -84,7 +84,8 @@ async def get_pending_withdrawals(
                         'bank_account_number': investor.get('bank_account_number'),
                         'amount': float(transaction.get('amount', 0)),
                         'created_at': transaction.get('created_at'),
-                        'description': transaction.get('description', '')
+                        'description': transaction.get('description', ''),
+                        'status': transaction.get('withdraw_status', 'pending')
                     }
                     pending_withdrawals.append(withdrawal_info)
 
@@ -135,16 +136,16 @@ async def approve_withdrawal(
 
         # TODO: Add admin role check here
 
-        # Approve the withdrawal
+        # Approve the withdrawal (move to processing)
         transaction_service = TransactionService()
-        result = transaction_service.update_withdrawal_status(transaction_id, 'sent')
+        result = transaction_service.update_withdrawal_status(transaction_id, 'processing')
 
         if not result['success']:
             raise HTTPException(status_code=400, detail=result['error'])
 
         return {
             'success': True,
-            'message': f'Withdrawal {transaction_id} has been approved and processed',
+            'message': f'Withdrawal {transaction_id} approved and moved to processing',
             'transaction_id': transaction_id
         }
 
@@ -152,6 +153,58 @@ async def approve_withdrawal(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error approving withdrawal: {str(e)}")
+
+@router.post("/pay-withdrawal/{transaction_id}")
+async def pay_withdrawal(
+    transaction_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Initiate Paystack payout for a withdrawal.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    # Extract token from "Bearer <token>" format
+    session_token = authorization
+    if authorization and authorization.startswith("Bearer "):
+        session_token = authorization.replace("Bearer ", "")
+
+    try:
+        # Get user from session or verify admin JWT
+        from ..services.dashboard import DashboardService
+        dashboard_service = DashboardService()
+        user = dashboard_service.get_user_by_session(session_token)
+
+        if not user:
+             # If not a regular session, try to validate as admin JWT
+            try:
+                payload = verify_access_token(session_token)
+                if payload.get('role') != 'admin':
+                    raise HTTPException(status_code=401, detail="Invalid or expired session")
+                user = {'is_admin': True, 'username': payload.get('sub')}
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+        # Process payout
+        transaction_service = TransactionService()
+        result = transaction_service.process_payout(transaction_id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return {
+            'success': True,
+            'message': f'Payout initiated for {transaction_id}',
+            'data': result.get('data')
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing payout: {str(e)}")
 
 @router.post("/reject-withdrawal/{transaction_id}")
 async def reject_withdrawal(

@@ -19,7 +19,7 @@ const SecurityQuestion = () => {
     const checkScreenSize = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
@@ -29,10 +29,11 @@ const SecurityQuestion = () => {
   useEffect(() => {
     const fetchSecurityQuestion = async () => {
       if (!email) return;
-      
+
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/auth/security-question?email=${encodeURIComponent(email)}`);
-        
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+        const response = await fetch(`${API_BASE_URL}/auth/security-question?email=${encodeURIComponent(email)}`);
+
         if (response.ok) {
           const data = await response.json();
           setSecurityQuestion(data.security_question);
@@ -57,7 +58,8 @@ const SecurityQuestion = () => {
     setIsVerifying(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/forgot-password/security-question', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password/security-question`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -92,8 +94,8 @@ const SecurityQuestion = () => {
 
   const containerStyle = {
     minHeight: '100vh',
-    background: isMobile 
-      ? 'white' 
+    background: isMobile
+      ? 'white'
       : 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 30%, #059669 100%)',
     display: 'flex',
     alignItems: 'center',
@@ -174,7 +176,7 @@ const SecurityQuestion = () => {
         style={cardStyle}
         initial={{ y: 50, opacity: 0, scale: 0.95 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
-        transition={{ 
+        transition={{
           duration: 0.6,
           ease: [0.25, 0.46, 0.45, 0.94]
         }}

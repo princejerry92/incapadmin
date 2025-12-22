@@ -19,7 +19,7 @@ const VerifyCode = () => {
     const checkScreenSize = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
@@ -52,7 +52,7 @@ const VerifyCode = () => {
   const handleCodeChange = (index, value) => {
     // Only allow digits
     if (!/^\d*$/.test(value)) return;
-    
+
     const newCode = [...code];
     newCode[index] = value;
     setCode(newCode);
@@ -73,11 +73,11 @@ const VerifyCode = () => {
   const handlePaste = (e) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData('text').replace(/\D/g, '').substring(0, 6);
-    
+
     if (pasteData.length === 6) {
       const newCode = pasteData.split('');
       setCode(newCode);
-      
+
       // Focus last input
       if (inputRefs.current[5]) {
         inputRefs.current[5].focus();
@@ -88,9 +88,10 @@ const VerifyCode = () => {
   const handleResendCode = async () => {
     setError('');
     setMessage('');
-    
+
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/forgot-password/request', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password/request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -134,7 +135,8 @@ const VerifyCode = () => {
     setIsVerifying(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/forgot-password/verify-code', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password/verify-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -178,8 +180,8 @@ const VerifyCode = () => {
 
   const containerStyle = {
     minHeight: '100vh',
-    background: isMobile 
-      ? 'white' 
+    background: isMobile
+      ? 'white'
       : 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 30%, #059669 100%)',
     display: 'flex',
     alignItems: 'center',
@@ -260,7 +262,7 @@ const VerifyCode = () => {
         style={cardStyle}
         initial={{ y: 50, opacity: 0, scale: 0.95 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
-        transition={{ 
+        transition={{
           duration: 0.6,
           ease: [0.25, 0.46, 0.45, 0.94]
         }}
@@ -357,7 +359,7 @@ const VerifyCode = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5, duration: 0.5 }}
         >
-          {countdown > 0 
+          {countdown > 0
             ? `Code expires in ${formatTime(countdown)}`
             : 'Code has expired'}
         </motion.div>
@@ -411,7 +413,7 @@ const VerifyCode = () => {
             fontFamily: '"Lexend Deca", sans-serif',
             marginBottom: '16px'
           }}
-          whileHover={resendAvailable ? { 
+          whileHover={resendAvailable ? {
             scale: 1.01,
             borderColor: '#d1d5db',
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
@@ -489,7 +491,7 @@ const VerifyCode = () => {
           >
             Try another way
           </motion.span>
-          
+
           <motion.span
             style={{
               fontSize: '14px',

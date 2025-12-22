@@ -11,9 +11,10 @@ const AdminInvestors = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
             const url = searchQuery
-                ? `http://localhost:8000/admin/investors?search=${searchQuery}`
-                : 'http://localhost:8000/admin/investors';
+                ? `${API_BASE_URL}/admin/investors?search=${searchQuery}`
+                : `${API_BASE_URL}/admin/investors`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }

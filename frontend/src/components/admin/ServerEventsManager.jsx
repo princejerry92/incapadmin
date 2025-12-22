@@ -18,6 +18,10 @@ const ServerEventsManager = () => {
 
     // Load events on component mount
     useEffect(() => {
+        const adminToken = localStorage.getItem('adminToken');
+        if (adminToken) {
+            dashboardAPI.setToken(adminToken);
+        }
         loadEvents();
     }, []);
 

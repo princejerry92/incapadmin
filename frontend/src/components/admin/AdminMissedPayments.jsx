@@ -16,7 +16,8 @@ const AdminMissedPayments = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/admin/missed-payments-summary`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/missed-payments-summary`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -48,7 +49,8 @@ const AdminMissedPayments = () => {
         setMessage(null);
         try {
             const token = localStorage.getItem('adminToken');
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/admin/catch-up-missed-payments/${investorId}`, {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+            const response = await fetch(`${API_BASE_URL}/admin/catch-up-missed-payments/${investorId}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`

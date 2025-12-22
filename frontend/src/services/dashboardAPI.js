@@ -25,10 +25,31 @@ class DashboardAPI {
   async fetchWithAuth(url, options = {}) {
     // Check if we have a valid token
     if (!this.token) {
-      const sessionToken = localStorage.getItem('session_token');
-      if (sessionToken) {
-        this.token = sessionToken;
-      } else {
+      // Priority 1: Check for adminToken if this is an admin route
+      if (url.includes('/admin/')) {
+        const adminToken = localStorage.getItem('adminToken');
+        if (adminToken) {
+          this.token = adminToken;
+        }
+      }
+
+      // Priority 2: Check for user session token
+      if (!this.token) {
+        const sessionToken = localStorage.getItem('session_token');
+        if (sessionToken) {
+          this.token = sessionToken;
+        }
+      }
+
+      // Priority 3: Final fallback to adminToken for any route (in case of shared services used in admin panel)
+      if (!this.token) {
+        const adminToken = localStorage.getItem('adminToken');
+        if (adminToken) {
+          this.token = adminToken;
+        }
+      }
+
+      if (!this.token) {
         throw new Error('No authentication token available');
       }
     }

@@ -14,8 +14,9 @@ class PaystackService:
         # Use the package's main client. Sub-clients are available as attributes
         # e.g. client.transactions, client.customers
         self.client = PaystackClient(secret_key=settings.PAYSTACK_SECRET_KEY)
-        self.transactions = self.client.transactions
-        self.customers = self.client.customers
+        self.transfer_recipients = self.client.transfer_recipients
+        self.transfers = self.client.transfers
+        self.misc = self.client.miscellaneous
 
     def _normalize_response(self, resp: Any) -> Dict[str, Any]:
         """Normalize pypaystack2 Response objects or dicts into a simple dict.
@@ -175,6 +176,103 @@ class PaystackService:
                 "status": False,
                 "message": f"Error retrieving transactions: {str(e)}"
             }
+
+    # --- Payout / Transfer Methods ---
+
+    def resolve_bank_code(self, bank_name: str) -> Optional[str]:
+        """
+        Resolve bank name to bank code.
+        Note: This is a best-effort matching.
+        """
+        try:
+            # Fetch list of banks from Paystack
+            response = self.misc.list_banks(country="nigeria")
+            norm = self._normalize_response(response)
+            
+            if not norm.get('status'):
+                logger.error("Failed to list banks for resolution: %s", norm.get('message'))
+                return None
+                
+            banks = norm.get('data') or []
+            if not banks:
+                return None
+                
+            # Normalize bank name for comparison
+            target_name = bank_name.lower().strip()
+            
+            # Try exact match first
+            for bank in banks:
+                if bank.get('name', '').lower() == target_name:
+                    return bank.get('code')
+            
+            # Try fuzzy match (contains)
+            for bank in banks:
+                if target_name in bank.get('name', '').lower() or bank.get('name', '').lower() in target_name:
+                    return bank.get('code')
+                    
+            return None
+            
+        except Exception as e:
+            logger.exception("Error resolving bank code: %s", str(e))
+            return None
+
+    def create_transfer_recipient(
+        self, 
+        name: str, 
+        account_number: str, 
+        bank_code: str, 
+        currency: str = "NGN"
+    ) -> Dict[str, Any]:
+        """
+        Create a Transfer Recipient
+        """
+        try:
+            response = self.transfer_recipients.create(
+                type="nuban",
+                name=name,
+                account_number=account_number,
+                bank_code=bank_code,
+                currency=currency
+            )
+            norm = self._normalize_response(response)
+            
+            if norm.get('status'):
+                return {"status": True, "message": "Recipient created", "data": norm.get('data')}
+            else:
+                return {"status": False, "message": norm.get('message', "Failed to create recipient")}
+                
+        except Exception as e:
+            logger.exception("Error creating transfer recipient: %s", str(e))
+            return {"status": False, "message": f"Error creating recipient: {str(e)}"}
+
+    def initiate_transfer(
+        self, 
+        amount: int, 
+        recipient_code: str, 
+        reason: str = "Withdrawal Payout", 
+        reference: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Initiate a Transfer
+        amount: in kobo
+        """
+        try:
+            response = self.transfers.initiate(
+                amount=amount,
+                recipient=recipient_code,
+                reason=reason,
+                reference=reference
+            )
+            norm = self._normalize_response(response)
+            
+            if norm.get('status'):
+                return {"status": True, "message": "Transfer initiated", "data": norm.get('data')}
+            else:
+                return {"status": False, "message": norm.get('message', "Failed to initiate transfer")}
+                
+        except Exception as e:
+            logger.exception("Error initiating transfer: %s", str(e))
+            return {"status": False, "message": f"Error initiating transfer: {str(e)}"}
 
 # Instantiate service
 paystack_service = PaystackService()
