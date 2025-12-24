@@ -86,6 +86,39 @@ class DashboardAPI {
     }
   }
 
+  // Method to handle file downloads (e.g. PDFs)
+  async downloadFile(url, fileName) {
+    if (!this.token) {
+      this.token = localStorage.getItem('session_token') || localStorage.getItem('adminToken');
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${url}`, {
+        headers: {
+          'Authorization': `Bearer ${this.token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      return { success: true };
+    } catch (error) {
+      console.error('Download failed:', error);
+      throw error;
+    }
+  }
+
   // Setup real-time listeners for Supabase
   setupRealTimeListeners() {
     if (!this.supabase) {
@@ -593,6 +626,15 @@ class DashboardAPI {
       method: 'POST',
       body: JSON.stringify(accountData)
     });
+  }
+
+  // PDF Export methods
+  async exportTransactionReceipt(transactionId) {
+    return this.downloadFile(`/dashboard/export/receipt/${transactionId}`, `receipt_${transactionId}.pdf`);
+  }
+
+  async exportTransactionHistory() {
+    return this.downloadFile('/dashboard/export/history', 'transaction_history.pdf');
   }
 }
 

@@ -32,7 +32,74 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media print {
+
+  /* Guard: Only show what we explicitly want to print */
+  #root>*:not(.printable-only):not(.printable-receipt),
+  .dashboard-container>*:not(.printable-only):not(.printable-receipt),
+  .modal-overlay,
+  .sidebar,
+  .top-nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Reset default visibility */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Show only the targeted printable sections and their children */
+  body.print-history-mode .printable-only,
+  body.print-history-mode .printable-only *,
+  body.print-receipt-mode .printable-receipt,
+  body.print-receipt-mode .printable-receipt * {
+    visibility: visible !important;
+  }
+
+  /* Layout for the printable containers */
+  .printable-only,
+  .printable-receipt {
+    display: none;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  body.print-history-mode .printable-only {
+    display: block !important;
+  }
+
+  body.print-receipt-mode .printable-receipt {
+    display: block !important;
+  }
+
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+
+  /* Force background colors to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

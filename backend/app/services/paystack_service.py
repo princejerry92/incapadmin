@@ -5,6 +5,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Static mapping of bank names (as used in frontend) to Paystack bank codes.
+# This ensures reliable resolution without depending on API fuzzy matching.
+# Codes sourced from Paystack's bank list API for Nigeria.
+BANK_CODE_MAP = {
+    "Access Bank": "044",
+    "GTBank": "058",
+    "First Bank": "011",
+    "UBA": "033",
+    "Zenith Bank": "057",
+    "Fidelity Bank": "070",
+    "Opay": "999992",  # OPay (Paycom)
+    "Money Point": "50515",  # Moniepoint MFB
+    "Skye Bank": "076",  # Now Polaris Bank
+    "Eco Bank": "050",
+    "Bank PHB": "082",  # Keystone Bank (PHB acquired)
+    "Kuda Bank": "50211",
+    "SunTrust Bank": "100",
+    "Palm Pay": "999991",  # PalmPay
+    "Union Bank": "032",
+}
+
 
 class PaystackService:
     def __init__(self):
@@ -14,8 +35,11 @@ class PaystackService:
         # Use the package's main client. Sub-clients are available as attributes
         # e.g. client.transactions, client.customers
         self.client = PaystackClient(secret_key=settings.PAYSTACK_SECRET_KEY)
+        self.transactions = self.client.transactions  # For initialize, verify, list transactions
+        self.customers = self.client.customers  # For customer creation
         self.transfer_recipients = self.client.transfer_recipients
         self.transfers = self.client.transfers
+        self.verification = self.client.verification
         self.misc = self.client.miscellaneous
 
     def _normalize_response(self, resp: Any) -> Dict[str, Any]:
@@ -44,6 +68,25 @@ class PaystackService:
             return dict(resp)
         except Exception:
             return {"status": False, "message": "Unknown response from Paystack client", "data": None}
+
+    def verify_account_details(self, account_number: str, bank_code: str) -> Dict[str, Any]:
+        """
+        Verify account details using Paystack
+        """
+        try:
+            response = self.verification.resolve_account_number(
+                account_number=account_number,
+                bank_code=bank_code
+            )
+            norm = self._normalize_response(response)
+            
+            if norm.get('status'):
+                return {"status": True, "message": "Account verified", "data": norm.get('data')}
+            else:
+                return {"status": False, "message": norm.get('message', "Failed to verify account")}
+        except Exception as e:
+            logger.exception("Error verifying account: %s", str(e))
+            return {"status": False, "message": f"Error verifying account: {str(e)}"}
 
     def initialize_transaction(
         self,
@@ -182,10 +225,19 @@ class PaystackService:
     def resolve_bank_code(self, bank_name: str) -> Optional[str]:
         """
         Resolve bank name to bank code.
-        Note: This is a best-effort matching.
+        First checks static mapping, then falls back to Paystack API lookup.
         """
+        # 1. Check static map first (exact match)
+        if bank_name in BANK_CODE_MAP:
+            return BANK_CODE_MAP[bank_name]
+            
+        # 2. Try case-insensitive match in static map
+        for name, code in BANK_CODE_MAP.items():
+            if name.lower() == bank_name.lower():
+                return code
+
+        # 3. Fallback to Paystack API lookup
         try:
-            # Fetch list of banks from Paystack
             response = self.misc.list_banks(country="nigeria")
             norm = self._normalize_response(response)
             
@@ -227,8 +279,9 @@ class PaystackService:
         Create a Transfer Recipient
         """
         try:
+            # pypaystack2 uses 'type_' instead of 'type' to avoid keyword conflict
             response = self.transfer_recipients.create(
-                type="nuban",
+                type_="nuban",
                 name=name,
                 account_number=account_number,
                 bank_code=bank_code,

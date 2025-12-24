@@ -2,11 +2,13 @@
 API routes for dashboard operations.
 """
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Response
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
 from ..services.dashboard import DashboardService
 from ..services.transaction_service import TransactionService
+from ..utils.pdf_generator import PDFGenerator
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -363,3 +365,102 @@ async def delete_transaction(request: DeleteTransactionRequest, authorization: O
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting transaction: {str(e)}")
+
+
+@router.get("/export/receipt/{transaction_id}")
+async def export_transaction_receipt(transaction_id: str, authorization: Optional[str] = Header(None)):
+    """
+    Export a single transaction receipt as PDF.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    session_token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    
+    try:
+        service = DashboardService()
+        user = service.get_user_by_session(session_token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid session")
+            
+        # Get transaction
+        tx_service = TransactionService()
+        # Verify investor belongs to user
+        investor_resp = service.supabase.table('investors').select('id, account_number').eq('email', user['email']).execute()
+        investor_data = getattr(investor_resp, 'data', [])
+        if not investor_data:
+            raise HTTPException(status_code=404, detail="Investor not found")
+        
+        investor_id = investor_data[0]['id']
+        tx_result = tx_service.get_transaction_by_id(transaction_id, investor_id)
+        
+        if not tx_result['success']:
+            raise HTTPException(status_code=404, detail="Transaction not found or access denied")
+        
+        # Add account number to user info for PDF
+        user_info = {**user, 'account_number': investor_data[0]['account_number']}
+        
+        # Generate PDF
+        pdf_gen = PDFGenerator()
+        pdf_buffer = pdf_gen.generate_receipt(tx_result['data'], user_info)
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=receipt_{transaction_id}.pdf"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+
+@router.get("/export/history")
+async def export_transaction_history(authorization: Optional[str] = Header(None)):
+    """
+    Export all transaction history as PDF.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    session_token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    
+    try:
+        service = DashboardService()
+        user = service.get_user_by_session(session_token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid session")
+            
+        # Get investor info
+        investor_resp = service.supabase.table('investors').select('id, account_number').eq('email', user['email']).execute()
+        investor_data = getattr(investor_resp, 'data', [])
+        if not investor_data:
+            raise HTTPException(status_code=404, detail="Investor not found")
+            
+        investor_id = investor_data[0]['id']
+        
+        # Get all transactions
+        tx_service = TransactionService()
+        tx_result = tx_service.get_transaction_history(investor_id)
+        
+        if not tx_result['success']:
+            raise HTTPException(status_code=500, detail="Failed to fetch transactions")
+        
+        # Add account number to user info for PDF
+        user_info = {**user, 'account_number': investor_data[0]['account_number']}
+        
+        # Generate PDF
+        pdf_gen = PDFGenerator()
+        pdf_buffer = pdf_gen.generate_history_report(tx_result['data'], user_info)
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline; filename=transaction_history.pdf"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+

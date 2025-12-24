@@ -82,6 +82,7 @@ const Dashboard = () => {
     const [showCustomerCare, setShowCustomerCare] = useState(false);
     const [showSessionExpiredModal, setShowSessionExpiredModal] = useState(false);
     const [transactionsExpanded, setTransactionsExpanded] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const {
         notifications,
@@ -147,20 +148,85 @@ const Dashboard = () => {
     }, []);
 
 
+    const fetchDashboardData = async (useCache = true) => {
+        let token = getSessionToken();
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
+        try {
+            if (useCache) {
+                const cachedData = cacheService.getDashboardData();
+                if (cachedData) {
+                    setDashboardData(cachedData);
+                    setLastUpdate(cachedData._lastUpdate);
+                    setCacheAge(cachedData._cacheAge);
+                    setLoading(false);
+                } else {
+                    setLoading(true);
+                }
+            } else {
+                setIsRefreshing(true);
+            }
+
+            setNetworkError(false);
+
+            const data = await dashboardAPI.getDashboardData(useCache);
+            if (data.success) {
+                setDashboardData(data);
+                if (!data._cached) {
+                    setLastUpdate(Date.now());
+                    setCacheAge(0);
+                } else {
+                    setLastUpdate(data._lastUpdate);
+                    setCacheAge(data._cacheAge);
+                }
+                if (data.notifications && data.notifications.length > 0) {
+                    addNotifications(data.notifications);
+                }
+            } else {
+                if (!dashboardData && !useCache) {
+                    setError(data.error || 'Failed to load dashboard data');
+                }
+            }
+        } catch (err) {
+            console.error('Dashboard fetch error:', err);
+            const cachedData = cacheService.getDashboardData();
+            if (cachedData && useCache) {
+                setDashboardData(cachedData);
+                setLastUpdate(cachedData._lastUpdate);
+                setCacheAge(cachedData._cacheAge);
+            } else if (!useCache) {
+                alert('Refresh failed: ' + (err.message || 'Server unreachable'));
+            } else {
+                setError(err.message || 'Failed to load dashboard data');
+            }
+
+            if (err.message.includes('401') || err.message.includes('Unauthorized')) {
+                setShowSessionExpiredModal(true);
+            }
+        } finally {
+            setLoading(false);
+            setIsRefreshing(false);
+        }
+    };
+
+    const handleManualRefresh = () => {
+        if (isRefreshing) return;
+        fetchDashboardData(false);
+    };
+
     // Unified effect to handle URL parameters (session_token, payment) and data fetching
     useEffect(() => {
-        const processUrlParamsAndFetch = async () => {
-            // Create a NEW URLSearchParams object to avoid mutation issues
+        const processUrlParams = async () => {
             const currentParams = new URLSearchParams(window.location.search);
             let paramsChanged = false;
-            let token = getSessionToken();
 
             // 1. Handle session_token
             const urlToken = currentParams.get('session_token');
             if (urlToken) {
-                console.debug('[Dashboard] Found session_token in URL:', urlToken);
                 setSessionToken(urlToken);
-                token = urlToken; // Update local token variable
                 currentParams.delete('session_token');
                 paramsChanged = true;
             }
@@ -168,7 +234,6 @@ const Dashboard = () => {
             // 2. Handle payment status
             const payment = currentParams.get('payment');
             if (payment) {
-                console.debug('[Dashboard] Found payment query param:', payment);
                 setPaymentStatus(payment);
                 setShowPaymentNotification(true);
                 currentParams.delete('payment');
@@ -181,68 +246,13 @@ const Dashboard = () => {
                 setSearchParams(currentParams);
             }
 
-            // 4. Fetch Dashboard Data
-            if (!token) {
-                navigate('/login');
-                return;
-            }
-
-            try {
-                // Don't set loading true if we have cached data to prevent flickering
-                // asking cacheService directly
-                const cachedData = cacheService.getDashboardData();
-                if (cachedData) {
-                    setDashboardData(cachedData);
-                    setLastUpdate(cachedData._lastUpdate);
-                    setCacheAge(cachedData._cacheAge);
-                    setLoading(false);
-                } else {
-                    setLoading(true);
-                }
-
-                setNetworkError(false);
-
-                const data = await dashboardAPI.getDashboardData(true);
-                if (data.success) {
-                    setDashboardData(data);
-                    if (!data._cached) {
-                        setLastUpdate(Date.now());
-                        setCacheAge(0);
-                    } else {
-                        setLastUpdate(data._lastUpdate);
-                        setCacheAge(data._cacheAge);
-                    }
-                    if (data.notifications && data.notifications.length > 0) {
-                        addNotifications(data.notifications);
-                    }
-                } else {
-                    // Only set error if we don't have cached data as fallback
-                    if (!cachedData) {
-                        setError(data.error || 'Failed to load dashboard data');
-                    }
-                }
-            } catch (err) {
-                console.error('Dashboard fetch error:', err);
-                const cachedData = cacheService.getDashboardData();
-                if (cachedData) {
-                    setDashboardData(cachedData);
-                    setLastUpdate(cachedData._lastUpdate);
-                    setCacheAge(cachedData._cacheAge);
-                } else {
-                    setError(err.message || 'Failed to load dashboard data');
-                }
-
-                if (err.message.includes('401') || err.message.includes('Unauthorized')) {
-                    setShowSessionExpiredModal(true);
-                }
-            } finally {
-                setLoading(false);
-            }
+            // 4. Initial Fetch
+            fetchDashboardData(true);
         };
 
-        processUrlParamsAndFetch();
+        processUrlParams();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [navigate]); // Intentionally minimal dependencies to run on mount
+    }, [navigate]);
 
     useEffect(() => {
         const handleDashboardRefresh = (event) => {
@@ -714,6 +724,14 @@ const Dashboard = () => {
                         <p className="text-green-100">{getUserName()}</p>
                     </div>
                     <div className="flex items-center space-x-3">
+                        <button
+                            onClick={handleManualRefresh}
+                            className={`p-2 bg-white/10 hover:bg-white/20 rounded-full transition-all transform hover:scale-110 flex items-center justify-center ${isRefreshing ? 'cursor-wait' : ''}`}
+                            title="Refresh Dashboard"
+                            disabled={isRefreshing}
+                        >
+                            <RotateCcw className={`w-5 h-5 text-white ${isRefreshing ? 'animate-spin-slow' : ''}`} />
+                        </button>
                         <NotificationDropdown
                             notifications={notifications}
                             unreadCount={unreadCount}
@@ -838,6 +856,13 @@ const Dashboard = () => {
                 </div>
             </div>
 
+            {/* Goals Info - Mobile */}
+            <div className="px-4 mb-6">
+                <div className="bg-gradient-to-br from-white via-gray-50 to-white rounded-2xl p-6 shadow-md border border-gray-100">
+                    <GoalsSummary dashboardData={dashboardData} />
+                </div>
+            </div>
+
             {/* Investment Analytics - Mobile Optimized without Horizontal Scroll */}
             <div className="px-4 mb-6" id="analytics-section">
                 <div className="bg-white rounded-2xl shadow-md p-4 overflow-hidden">
@@ -893,12 +918,20 @@ const Dashboard = () => {
                         <BarChart3 className="w-5 h-5 text-green-600" />
                         Transactions
                     </h3>
-                    <button className="text-green-600 text-sm font-medium flex items-center gap-1 hover:gap-2 transition-all">
-                        See All <ArrowRight className="w-4 h-4" />
+                    <button
+                        onClick={() => setTransactionsExpanded(!transactionsExpanded)}
+                        className="text-green-600 text-sm font-medium flex items-center gap-1 hover:gap-2 transition-all"
+                    >
+                        {transactionsExpanded ? 'See Less' : 'See All'} <ArrowRight className={`w-4 h-4 transition-transform ${transactionsExpanded ? 'rotate-90' : ''}`} />
                     </button>
                 </div>
                 <div className="space-y-3">
-                    <TransactionHistory transactions={transactions} onReportIssue={handleReportIssue} />
+                    <TransactionHistory
+                        transactions={transactionsExpanded ? transactions : transactions.slice(0, 5)}
+                        onReportIssue={handleReportIssue}
+                        showTitle={false}
+                        showSeeAll={false}
+                    />
                 </div>
             </div>
 
@@ -1164,6 +1197,15 @@ const Dashboard = () => {
                             <p className="text-gray-600">Here's what's happening with your portfolio today.</p>
                         </div>
                         <div className="flex items-center gap-4">
+                            <button
+                                onClick={handleManualRefresh}
+                                className={`p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl transition-all transform hover:scale-105 flex items-center justify-center gap-2 border border-gray-200 ${isRefreshing ? 'cursor-wait opacity-80' : ''}`}
+                                title="Refresh Dashboard"
+                                disabled={isRefreshing}
+                            >
+                                <RotateCcw className={`w-5 h-5 ${isRefreshing ? 'animate-spin-slow' : ''}`} />
+                                {!isMobile && <span className="text-sm font-medium">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>}
+                            </button>
                             <NotificationDropdown
                                 notifications={notifications}
                                 unreadCount={unreadCount}
@@ -1210,7 +1252,7 @@ const Dashboard = () => {
                                         <div className="flex items-center gap-2 text-sm text-slate-400">
                                             <span>Spending: {loading ? '...' : (showSensitive ? formatCurrency(getSpendingBalance()) : '******')}</span>
                                             {dashboardData?._cached && lastUpdate && (
-                                                <span className="text-xs text-gray-300 italic">(cached)</span>
+                                                <span className="text-xs text-gray-300 italic">.</span>
                                             )}
                                             {lastUpdate && (
                                                 <>
@@ -1299,6 +1341,8 @@ const Dashboard = () => {
                             <TransactionHistory
                                 transactions={transactionsExpanded ? transactions : transactions.slice(0, 5)}
                                 onReportIssue={handleReportIssue}
+                                showTitle={false}
+                                showSeeAll={false}
                             />
                         </div>
                     </div>
@@ -1347,7 +1391,7 @@ const Dashboard = () => {
                                     View All <ArrowRight className="w-3 h-3" />
                                 </button>
                             </div>
-                            <GoalsSummary />
+                            <GoalsSummary dashboardData={dashboardData} />
                         </div>
 
                         {/* Due Dates */}
@@ -1390,7 +1434,8 @@ const Dashboard = () => {
                 <TopUpModal
                     isOpen={showTopUpModal}
                     onClose={() => setShowTopUpModal(false)}
-                    onTopUp={handleTopUp}
+                    dashboardData={dashboardData}
+                    onSuccess={handleTopUp}
                 />
             )}
 

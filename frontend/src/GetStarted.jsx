@@ -339,7 +339,7 @@ export default function GetStarted() {
         {/* Conditionally render a single action button based on session state */}
         {isLoading ? (
           <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-            <Loader text="Checking your account..." size="small" />
+            <Loader text="Checking your account..." size="small" transparent={true} />
           </div>
         ) : isAuthenticated ? (
           <motion.button

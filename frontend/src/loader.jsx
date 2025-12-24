@@ -1,10 +1,10 @@
 import React from 'react';
 import styled from 'styled-components';
 
-const Loader = ({ text, size = 'large' }) => {
+const Loader = ({ text, size = 'large', transparent = false }) => {
   const zoomValue = size === 'small' ? 0.8 : 1.2;
   return (
-    <StyledWrapper>
+    <StyledWrapper transparent={transparent}>
       <svg id="svg-global" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 94 136" height={136} width={94} style={{ zoom: zoomValue }}>
         <path stroke="#4B22B5" d="M87.3629 108.433L49.1073 85.3765C47.846 84.6163 45.8009 84.6163 44.5395 85.3765L6.28392 108.433C5.02255 109.194 5.02255 110.426 6.28392 111.187L44.5395 134.243C45.8009 135.004 47.846 135.004 49.1073 134.243L87.3629 111.187C88.6243 110.426 88.6243 109.194 87.3629 108.433Z" id="line-v1" />
         <path stroke="#5728CC" d="M91.0928 95.699L49.2899 70.5042C47.9116 69.6734 45.6769 69.6734 44.2986 70.5042L2.49568 95.699C1.11735 96.5298 1.11735 97.8767 2.49568 98.7074L44.2986 123.902C45.6769 124.733 47.9116 124.733 49.2899 123.902L91.0928 98.7074C92.4712 97.8767 92.4712 96.5298 91.0928 95.699Z" id="line-v2" />
@@ -127,8 +127,8 @@ const StyledWrapper = styled.div`
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
-  background-color: #111827; /* Dark background to ensure visibility */
+  height: ${props => props.transparent ? 'auto' : '100vh'};
+  background-color: ${props => props.transparent ? 'transparent' : '#111827'};
 
   #svg-global {
     zoom: 1.2;

@@ -12,6 +12,8 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 @router.get("/pending-withdrawals")
 async def get_pending_withdrawals(
+    page: int = 1,
+    limit: int = 50,
     authorization: Optional[str] = Header(None)
 ):
     """
@@ -51,14 +53,17 @@ async def get_pending_withdrawals(
         import supabase
         supabase_client = supabase.create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
+        offset = (page - 1) * limit
         response = supabase_client.table('transactions')\
-            .select('*')\
+            .select('*', count='exact')\
             .in_('withdraw_status', ['pending', 'processing'])\
             .eq('transaction_type', 'withdrawal')\
             .order('created_at', desc=True)\
+            .range(offset, offset + limit - 1)\
             .execute()
 
         transactions = getattr(response, 'data', [])
+        total_count = getattr(response, 'count', 0)
 
         # Get investor details for each withdrawal
         pending_withdrawals = []
@@ -92,7 +97,12 @@ async def get_pending_withdrawals(
         return {
             'success': True,
             'pending_withdrawals': pending_withdrawals,
-            'total_count': len(pending_withdrawals)
+            'pagination': {
+                'current_page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit if total_count > 0 else 1
+            }
         }
 
     except HTTPException:
@@ -154,6 +164,59 @@ async def approve_withdrawal(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error approving withdrawal: {str(e)}")
 
+@router.post("/verify-withdrawal-account/{transaction_id}")
+async def verify_withdrawal_account(
+    transaction_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Verify the bank account details for a withdrawal.
+    Returns the resolved account name if valid.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    # Extract token from "Bearer <token>" format
+    session_token = authorization
+    if authorization and authorization.startswith("Bearer "):
+        session_token = authorization.replace("Bearer ", "")
+
+    try:
+        # Get user from session or verify admin JWT
+        from ..services.dashboard import DashboardService
+        dashboard_service = DashboardService()
+        user = dashboard_service.get_user_by_session(session_token)
+
+        if not user:
+             # If not a regular session, try to validate as admin JWT
+            try:
+                payload = verify_access_token(session_token)
+                if payload.get('role') != 'admin':
+                    raise HTTPException(status_code=401, detail="Invalid or expired session")
+                user = {'is_admin': True, 'username': payload.get('sub')}
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+        # Verify account
+        transaction_service = TransactionService()
+        result = transaction_service.verify_withdrawal_account(transaction_id)
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return {
+            'success': True,
+            'message': 'Account verified successfully',
+            'data': result.get('data')
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error verifying account: {str(e)}")
+
 @router.post("/pay-withdrawal/{transaction_id}")
 async def pay_withdrawal(
     transaction_id: str,
@@ -205,6 +268,64 @@ async def pay_withdrawal(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing payout: {str(e)}")
+
+@router.post("/manual-pay-withdrawal/{transaction_id}")
+async def manual_pay_withdrawal(
+    transaction_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Manually mark a withdrawal as sent. 
+    Usually called after admin performs a manual transfer and confirms verification details.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    # Extract token from "Bearer <token>" format
+    session_token = authorization
+    if authorization and authorization.startswith("Bearer "):
+        session_token = authorization.replace("Bearer ", "")
+
+    try:
+        # Get user from session or verify admin JWT
+        from ..services.dashboard import DashboardService
+        dashboard_service = DashboardService()
+        user = dashboard_service.get_user_by_session(session_token)
+
+        if not user:
+            try:
+                payload = verify_access_token(session_token)
+                if payload.get('role') != 'admin':
+                    raise HTTPException(status_code=401, detail="Invalid or expired session")
+                user = {'is_admin': True, 'username': payload.get('sub')}
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+        # Update status to 'sent'
+        transaction_service = TransactionService()
+        result = transaction_service.update_withdrawal_status(transaction_id, 'sent')
+
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        # Update the paystack_ref to 'MANUAL'
+        transaction_service.supabase.table('transactions').update({
+            'paystack_ref': 'MANUAL',
+            'paystack_status': 'success'
+        }).eq('transaction_id', transaction_id).execute()
+
+        return {
+            'success': True,
+            'message': f'Withdrawal {transaction_id} marked as sent manually',
+            'transaction_id': transaction_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing manual payout: {str(e)}")
 
 @router.post("/reject-withdrawal/{transaction_id}")
 async def reject_withdrawal(
@@ -302,7 +423,7 @@ async def admin_process_due_dates(
 
         # Process due dates
         interest_service = InterestCalculationService()
-        result = interest_service.check_and_process_due_dates()
+        result = interest_service.check_and_process_all_due_dates()
 
         return {
             'success': result['success'],
@@ -320,6 +441,8 @@ async def admin_process_due_dates(
 @router.get("/investors")
 async def get_all_investors(
     search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
     authorization: Optional[str] = Header(None)
 ):
     """
@@ -332,7 +455,7 @@ async def get_all_investors(
     try:
         from ..services.admin_service import AdminService
         admin_service = AdminService()
-        result = admin_service.get_all_investors(search_query=search)
+        result = admin_service.get_all_investors(search_query=search, page=page, limit=limit)
         
         if not result['success']:
             raise HTTPException(status_code=500, detail=result['error'])
@@ -344,6 +467,8 @@ async def get_all_investors(
 @router.get("/payments")
 async def get_payments_summary(
     search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
     authorization: Optional[str] = Header(None)
 ):
     """
@@ -355,7 +480,7 @@ async def get_payments_summary(
     try:
         from ..services.admin_service import AdminService
         admin_service = AdminService()
-        result = admin_service.get_payments_summary(search_query=search)
+        result = admin_service.get_payments_summary(search_query=search, page=page, limit=limit)
         
         if not result['success']:
             raise HTTPException(status_code=500, detail=result['error'])
@@ -367,6 +492,8 @@ async def get_payments_summary(
 @router.get("/portfolio")
 async def get_portfolio_details(
     search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
     authorization: Optional[str] = Header(None)
 ):
     """
@@ -378,7 +505,7 @@ async def get_portfolio_details(
     try:
         from ..services.admin_service import AdminService
         admin_service = AdminService()
-        result = admin_service.get_portfolio_details(search_query=search)
+        result = admin_service.get_portfolio_details(search_query=search, page=page, limit=limit)
         
         if not result['success']:
             raise HTTPException(status_code=500, detail=result['error'])
@@ -414,6 +541,8 @@ async def update_investor_portfolio(
 @router.get("/customer-care")
 async def get_customer_care_queries(
     search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
     authorization: Optional[str] = Header(None)
 ):
     """
@@ -425,7 +554,7 @@ async def get_customer_care_queries(
     try:
         from ..services.admin_service import AdminService
         admin_service = AdminService()
-        result = admin_service.get_customer_care_queries(search_query=search)
+        result = admin_service.get_customer_care_queries(search_query=search, page=page, limit=limit)
         
         if not result['success']:
             raise HTTPException(status_code=500, detail=result['error'])
@@ -701,3 +830,41 @@ async def clear_server_events_flag(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error clearing server events flag: {str(e)}")
+
+
+class BalanceAdjustmentRequest(Dict[str, Any]):
+    amount: float
+    reason: str
+
+
+@router.post("/investor/{investor_id}/adjust-balance")
+async def adjust_investor_balance(
+    investor_id: str,
+    adjustment: Dict[str, Any],
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Manually adjust an investor's spending account balance.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+        
+    try:
+        amount = adjustment.get('amount')
+        reason = adjustment.get('reason', 'No reason provided')
+        
+        if amount is None:
+            raise HTTPException(status_code=400, detail="Amount is required")
+            
+        from ..services.admin_service import AdminService
+        admin_service = AdminService()
+        result = admin_service.manual_balance_adjustment(investor_id, float(amount), reason)
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
+            
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

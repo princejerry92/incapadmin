@@ -32,6 +32,7 @@ const AdminSystemHealth = () => {
     const [lastScanTime, setLastScanTime] = useState(null);
     const [cronStatus, setCronStatus] = useState(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
+    const [fixingId, setFixingId] = useState(null);
 
     // Initial Scan on Mount
     useEffect(() => {
@@ -86,6 +87,8 @@ const AdminSystemHealth = () => {
     };
 
     const handleFix = async (investorId) => {
+        if (fixingId) return;
+        setFixingId(investorId);
         try {
             const res = await apiCall(`/admin/integrity/fix/${investorId}`, 'POST');
             if (res.success) {
@@ -97,8 +100,20 @@ const AdminSystemHealth = () => {
             }
         } catch (err) {
             alert('Fix failed: Network error');
+        } finally {
+            setFixingId(null);
         }
     };
+
+    const totalOverpaid = integrityIssues
+        .filter(i => i.issue === 'payment_overage')
+        .reduce((sum, i) => {
+            const match = i.details.match(/Paid: ([\d.]+), Expected: ([\d.]+)/);
+            if (match) {
+                return sum + (parseFloat(match[1]) - parseFloat(match[2]));
+            }
+            return sum;
+        }, 0);
 
     const StatusCard = ({ title, value, icon: Icon, color }) => (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
@@ -199,10 +214,16 @@ const AdminSystemHealth = () => {
                         color={integrityIssues.length > 0 ? 'bg-red-500' : 'bg-green-500'}
                     />
                     <StatusCard
-                        title="System Status"
-                        value={integrityIssues.length > 0 ? 'Attention Needed' : 'Healthy'}
+                        title="Potential Overage"
+                        value={`₦${totalOverpaid.toLocaleString()}`}
                         icon={CheckCircleIcon}
-                        color={integrityIssues.length > 0 ? 'bg-orange-500' : 'bg-green-500'}
+                        color={totalOverpaid > 0 ? 'bg-orange-500' : 'bg-green-500'}
+                    />
+                    <StatusCard
+                        title="System Status"
+                        value={integrityIssues.length > 0 ? 'Attention' : 'Healthy'}
+                        icon={CheckCircleIcon}
+                        color={integrityIssues.length > 0 ? 'bg-indigo-500' : 'bg-green-500'}
                     />
                 </div>
 
@@ -236,9 +257,20 @@ const AdminSystemHealth = () => {
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                             <button
                                                 onClick={() => handleFix(issue.investor_id)}
-                                                className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1 rounded-md hover:bg-indigo-100 transition-colors"
+                                                disabled={fixingId === issue.investor_id}
+                                                className={`px-3 py-1 rounded-md transition-colors flex items-center ml-auto ${fixingId === issue.investor_id
+                                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                    : 'text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100'
+                                                    }`}
                                             >
-                                                Fix Issue
+                                                {fixingId === issue.investor_id ? (
+                                                    <>
+                                                        <ArrowPathIcon className="h-4 w-4 mr-1 animate-spin" />
+                                                        Fixing...
+                                                    </>
+                                                ) : (
+                                                    'Fix Issue'
+                                                )}
                                             </button>
                                         </td>
                                     </tr>

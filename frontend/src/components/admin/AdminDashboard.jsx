@@ -8,6 +8,7 @@ import AdminCustomerCare from './AdminCustomerCare';
 import AdminMissedPayments from './AdminMissedPayments';
 import AdminSystemHealth from './AdminSystemHealth';
 import ServerEventsManager from './ServerEventsManager';
+import ManualBalanceModal from './ManualBalanceModal';
 import { AdminRealtimeProvider, useAdminRealtime } from './AdminRealtime';
 import './Admin.css';
 import {
@@ -19,11 +20,14 @@ import {
     ArrowRightOnRectangleIcon,
     CpuChipIcon,
     ClockIcon,
-    SpeakerWaveIcon
+    SpeakerWaveIcon,
+    BanknotesIcon
 } from '@heroicons/react/24/outline';
 
 const AdminDashboardContent = () => {
     const [activeTab, setActiveTab] = useState('investors');
+    const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
     const navigate = useNavigate();
     const { newQueryCount } = useAdminRealtime();
 
@@ -39,26 +43,28 @@ const AdminDashboardContent = () => {
         navigate('/admin/login');
     };
 
+    const triggerRefresh = () => setRefreshKey(prev => prev + 1);
+
     const renderContent = () => {
         switch (activeTab) {
             case 'investors':
-                return <AdminInvestors />;
+                return <AdminInvestors key={refreshKey} />;
             case 'payments':
-                return <AdminPayments />;
+                return <AdminPayments key={refreshKey} />;
             case 'portfolio':
-                return <AdminPortfolio />;
+                return <AdminPortfolio key={refreshKey} />;
             case 'transactions':
-                return <AdminTransactions />;
+                return <AdminTransactions key={refreshKey} />;
             case 'customer-care':
-                return <AdminCustomerCare />;
+                return <AdminCustomerCare key={refreshKey} />;
             case 'server-events':
-                return <ServerEventsManager />;
+                return <ServerEventsManager key={refreshKey} />;
             case 'missed-payments':
-                return <AdminMissedPayments />;
+                return <AdminMissedPayments key={refreshKey} />;
             case 'system-health':
-                return <AdminSystemHealth />;
+                return <AdminSystemHealth key={refreshKey} />;
             default:
-                return <AdminInvestors />;
+                return <AdminInvestors key={refreshKey} />;
         }
     };
 
@@ -124,13 +130,22 @@ const AdminDashboardContent = () => {
                                 </span>
                             )}
                         </div>
-                        <button
-                            onClick={handleLogout}
-                            className="flex items-center bg-gradient-to-r from-red-500 to-pink-600 text-white px-4 py-2 rounded-lg shadow-lg hover:shadow-xl hover:from-red-600 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-300"
-                        >
-                            <ArrowRightOnRectangleIcon className="h-5 w-5 mr-2" />
-                            Logout
-                        </button>
+                        <div className="flex items-center space-x-4">
+                            <button
+                                onClick={() => setIsBalanceModalOpen(true)}
+                                className="flex items-center bg-white border-2 border-indigo-100 text-indigo-600 px-4 py-2 rounded-lg shadow-sm hover:shadow-md hover:bg-indigo-50 transition-all duration-300 font-bold"
+                            >
+                                <BanknotesIcon className="h-5 w-5 mr-2" />
+                                Update Balance
+                            </button>
+                            <button
+                                onClick={handleLogout}
+                                className="flex items-center bg-gradient-to-r from-red-500 to-pink-600 text-white px-4 py-2 rounded-lg shadow-lg hover:shadow-xl hover:from-red-600 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-300"
+                            >
+                                <ArrowRightOnRectangleIcon className="h-5 w-5 mr-2" />
+                                Logout
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -139,6 +154,12 @@ const AdminDashboardContent = () => {
                     {renderContent()}
                 </div>
             </div>
+
+            <ManualBalanceModal
+                isOpen={isBalanceModalOpen}
+                onClose={() => setIsBalanceModalOpen(false)}
+                onUpdate={triggerRefresh}
+            />
         </div>
     );
 };

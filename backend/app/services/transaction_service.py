@@ -296,6 +296,59 @@ class TransactionService:
         except Exception as e:
             return {'success': False, 'error': f'Error recording withdrawal request: {str(e)}'}
 
+    def verify_withdrawal_account(self, transaction_id: str) -> Dict[str, Any]:
+        """Verify the bank account details for a withdrawal transaction.
+
+        Args:
+            transaction_id: The transaction ID
+
+        Returns:
+            Dict with success status and resolved account data
+        """
+        try:
+            if self.supabase is None:
+                return {'success': False, 'error': 'Supabase client not initialized'}
+
+            # Get transaction details
+            tx_resp = self.supabase.table('transactions').select('investor_id').eq('transaction_id', transaction_id).execute()
+            tx_data = getattr(tx_resp, 'data', [])
+            if not tx_data:
+                return {'success': False, 'error': 'Transaction not found'}
+            
+            investor_id = tx_data[0].get('investor_id')
+            
+            # Get investor bank details
+            inv_resp = self.supabase.table('investors').select('bank_name, bank_account_number').eq('id', investor_id).execute()
+            inv_data = getattr(inv_resp, 'data', [])
+            if not inv_data:
+                return {'success': False, 'error': 'Investor details not found'}
+                
+            investor = inv_data[0]
+            bank_name = investor.get('bank_name')
+            account_number = investor.get('bank_account_number')
+            
+            if not bank_name or not account_number:
+                return {'success': False, 'error': 'Missing bank details for investor'}
+                
+            # Resolve Bank Code
+            bank_code = paystack_service.resolve_bank_code(bank_name)
+            if not bank_code:
+                return {'success': False, 'error': f"Could not resolve bank code for '{bank_name}'"}
+                
+            # Verify Account
+            verification = paystack_service.verify_account_details(account_number, bank_code)
+            
+            if not verification['status']:
+                return {'success': False, 'error': f"Account verification failed: {verification.get('message')}"}
+                
+            return {
+                'success': True,
+                'data': verification.get('data') 
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': f'Error verifying account: {str(e)}'}
+
     def process_payout(self, transaction_id: str) -> Dict[str, Any]:
         """Process a payout for a withdrawal via Paystack.
 
@@ -457,84 +510,9 @@ class TransactionService:
                     update_data['withdrawal_amount'] = str(withdrawal_amount)
                     resp = self.supabase.table('transactions').update(update_data).eq('transaction_id', transaction_id).execute()
                     
-                    # Recalculate the investor's current amount_due after withdrawal
-                    calc_result = self.calculate_amount_due(investor_id)
-                    if calc_result['success']:
-                        new_amount_due = calc_result['amount_due']
-                        
-                        # Update all transactions for this investor with the new calculated amount_due
-                        transaction_update_data = {
-                            'amount_due': new_amount_due,
-                            'updated_at': datetime.utcnow().isoformat()
-                        }
-                        
-                        transaction_update_resp = self.supabase.table('transactions').update(transaction_update_data).eq('investor_id', investor_id).execute()
-                        
-                        data = None
-                        error = None
-                        if isinstance(transaction_update_resp, dict):
-                            data = transaction_update_resp.get('data')
-                            error = transaction_update_resp.get('error')
-                        else:
-                            data = getattr(transaction_update_resp, 'data', None)
-                            error = getattr(transaction_update_resp, 'error', None)
-                        
-                        if error:
-                            return {'success': False, 'error': f'Failed to update investor transactions: {error}'}
-                        
-                        # Update the investor's total_paid field
-                        investor_update_data = {
-                            'updated_at': datetime.utcnow().isoformat()
-                        }
-                        
-                        # Get current total_paid value and add the withdrawal amount
-                        current_investor_resp = self.supabase.table('investors').select('total_paid').eq('id', investor_id).execute()
-                        if isinstance(current_investor_resp, dict):
-                            current_investor_data = current_investor_resp.get('data')
-                        else:
-                            current_investor_data = getattr(current_investor_resp, 'data', None)
-                        
-                        if current_investor_data and len(current_investor_data) > 0:
-                            # Check if total_paid field exists
-                            if 'total_paid' in current_investor_data[0]:
-                                current_total_paid = float(current_investor_data[0].get('total_paid', 0) or 0)
-                                new_total_paid = current_total_paid + withdrawal_amount
-                                investor_update_data['total_paid'] = str(new_total_paid)
-                            else:
-                                # If total_paid field doesn't exist, set it to the withdrawal amount
-                                investor_update_data['total_paid'] = str(withdrawal_amount)
-                        
-                        investor_update_resp = self.supabase.table('investors').update(investor_update_data).eq('id', investor_id).execute()
-
-                        investor_update_data_result = None
-                        investor_update_error = None
-                        if isinstance(investor_update_resp, dict):
-                            investor_update_data_result = investor_update_resp.get('data')
-                            investor_update_error = investor_update_resp.get('error')
-                        else:
-                            investor_update_data_result = getattr(investor_update_resp, 'data', None)
-                            investor_update_error = getattr(investor_update_resp, 'error', None)
-
-                        if investor_update_error:
-                            return {'success': False, 'error': f'Failed to update investor total_paid: {investor_update_error}'}
-
-                        if investor_update_error:
-                            return {'success': False, 'error': f'Failed to update investor total_paid: {investor_update_error}'}
-
-                        # CRITICAL FIX: Removed double deduction.
-                        # The amount is already deducted when the request is made (in withdrawal.py/InterestCalculationService).
-                        # We do NOT need to deduct it again here.
-                        
-                        # from .interest_calculation_service import InterestCalculationService
-                        # interest_service = InterestCalculationService()
-                        # spending_update_result = interest_service.process_user_withdrawal(
-                        #     investor_id,
-                        #     withdrawal_amount
-                        # )
-                        # if not spending_update_result['success']:
-                        #     return {'success': False, 'error': f'Failed to update spending account: {spending_update_result["error"]}'}
-                    else:
-                        return {'success': False, 'error': f'Failed to calculate new amount due: {calc_result.get("error")}'}
+                    # NOTE: We no longer increment total_paid here. 
+                    # total_paid is incremented in InterestCalculationService when interest is yielding 
+                    # into the spending account. Incrementing here on withdrawal would double-count.
                 else:
                     return {'success': False, 'error': f'Investor not found: {investor_error}'}
             else:
@@ -623,7 +601,37 @@ class TransactionService:
         except Exception as e:
             return {'success': False, 'error': f'Error retrieving transaction history: {str(e)}'}
 
+    def get_transaction_by_id(self, transaction_id: str, investor_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get a specific transaction by its ID.
+        
+        Args:
+            transaction_id: The transaction ID
+            investor_id: Optional investor ID for verification
+            
+        Returns:
+            Dict with success status and transaction/error
+        """
+        try:
+            if self.supabase is None:
+                return {'success': False, 'error': 'Supabase client not initialized'}
+
+            query = self.supabase.table('transactions').select('*').eq('transaction_id', transaction_id)
+            
+            if investor_id:
+                query = query.eq('investor_id', investor_id)
+                
+            resp = query.execute()
+            data = getattr(resp, 'data', [])
+            
+            if data:
+                return {'success': True, 'data': self._normalize_tx(dict(data[0]))}
+            else:
+                return {'success': False, 'error': 'Transaction not found'}
+        except Exception as e:
+            return {'success': False, 'error': f'Error retrieving transaction: {str(e)}'}
+
     def get_account_balance(self, account_number: str) -> Dict[str, Any]:
+
         """Calculate current balance for an account based on transactions.
 
         Args:
@@ -705,70 +713,7 @@ class TransactionService:
 
         return tx_copy
 
-    def calculate_amount_due(self, investor_id: str) -> Dict[str, Any]:
-        """Calculate the current amount due for an investor based on their investment.
 
-        Args:
-            investor_id: The investor ID
-
-        Returns:
-            Dict with success status and amount due/error
-        """
-        try:
-            # Get investor details
-            if self.supabase is None:
-                return {'success': False, 'error': 'Supabase client not initialized'}
-                
-            investor_resp = self.supabase.table('investors').select('id, portfolio_type, investment_type, initial_investment, created_at').eq('id', investor_id).execute()
-            
-            data = None
-            error = None
-            if isinstance(investor_resp, dict):
-                data = investor_resp.get('data')
-                error = investor_resp.get('error')
-            else:
-                data = getattr(investor_resp, 'data', None)
-                error = getattr(investor_resp, 'error', None)
-            
-            if not data or len(data) == 0:
-                return {'success': False, 'error': f'Investor not found: {error}'}
-
-            investor = data[0]
-            portfolio_type = investor.get('portfolio_type')
-            investment_type = investor.get('investment_type')
-            initial_investment = float(investor.get('initial_investment', 0))
-
-            # If no investment type set, no amount due
-            if not investment_type:
-                return {'success': True, 'amount_due': 0}
-
-            # Import portfolio service to get investment rules
-            from .portfolio_service import PortfolioService
-            portfolio_service = PortfolioService()
-
-            # Get investment requirements
-            requirements = portfolio_service.get_investment_requirements(portfolio_type, investment_type)
-            if not requirements:
-                return {'success': False, 'error': f'Invalid investment type {investment_type} for portfolio {portfolio_type}'}
-
-            # Calculate weeks elapsed since investment start
-            created_at = investor.get('created_at')
-            if isinstance(created_at, str):
-                start_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            else:
-                start_date = created_at
-
-            weeks_elapsed = (datetime.now(start_date.tzinfo) - start_date).days // 7
-
-            # Calculate amount due based on weekly interest
-            weekly_rate = requirements["weekly_interest_rate"] / 100
-            weekly_interest = initial_investment * weekly_rate
-            amount_due = weekly_interest * weeks_elapsed
-
-            return {'success': True, 'amount_due': amount_due, 'weeks_elapsed': weeks_elapsed}
-
-        except Exception as e:
-            return {'success': False, 'error': f'Error calculating amount due: {str(e)}'}
 
     def update_transaction_amounts(self, investor_id: str, investment_type: str) -> Dict[str, Any]:
         """Update existing transactions with calculated amounts based on investment type.

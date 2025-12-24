@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './Admin.css';
 import { useAdminRealtime } from './AdminRealtime';
+import Pagination from './Pagination';
 
 const AdminCustomerCare = () => {
     const [queries, setQueries] = useState([]);
@@ -10,7 +11,48 @@ const AdminCustomerCare = () => {
     const [answeringId, setAnsweringId] = useState(null);
     const [adminResponse, setAdminResponse] = useState('');
 
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
+    const [pagination, setPagination] = useState({
+        total_count: 0,
+        total_pages: 1
+    });
+
     const { supabase, resetNewQueryCount } = useAdminRealtime();
+
+    const fetchQueries = useCallback(async (searchQuery = '', page = 1, limit = 20) => {
+        setLoading(true);
+        try {
+            const token = localStorage.getItem('adminToken');
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+
+            const params = new URLSearchParams();
+            if (searchQuery) params.append('search', searchQuery);
+            params.append('page', page);
+            params.append('limit', limit);
+
+            const url = `${API_BASE_URL}/admin/customer-care?${params.toString()}`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                setQueries(data.data);
+                if (data.pagination) {
+                    setPagination(data.pagination);
+                }
+            } else {
+                setError(data.detail || 'Failed to fetch queries');
+            }
+        } catch (err) {
+            setError('Network error');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
         resetNewQueryCount();
@@ -25,7 +67,7 @@ const AdminCustomerCare = () => {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'customer_queries' },
                 () => {
-                    fetchQueries(search);
+                    fetchQueries(search, currentPage, pageSize);
                 }
             )
             .subscribe();
@@ -33,41 +75,25 @@ const AdminCustomerCare = () => {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [supabase, search]);
-
-    const fetchQueries = async (searchQuery = '') => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('adminToken');
-            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-            const url = searchQuery
-                ? `${API_BASE_URL}/admin/customer-care?search=${searchQuery}`
-                : `${API_BASE_URL}/admin/customer-care`;
-
-            const response = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-
-            if (data.success) {
-                setQueries(data.data);
-            } else {
-                setError(data.detail || 'Failed to fetch queries');
-            }
-        } catch (err) {
-            setError('Network error');
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [supabase, search, currentPage, pageSize, fetchQueries]);
 
     useEffect(() => {
-        fetchQueries();
-    }, []);
+        fetchQueries(search, currentPage, pageSize);
+    }, [currentPage, pageSize, search, fetchQueries]);
 
     const handleSearch = (e) => {
         e.preventDefault();
-        fetchQueries(search);
+        setCurrentPage(1);
+        fetchQueries(search, 1, pageSize);
+    };
+
+    const handlePageChange = (newPage) => {
+        setCurrentPage(newPage);
+    };
+
+    const handlePageSizeChange = (newSize) => {
+        setPageSize(newSize);
+        setCurrentPage(1);
     };
 
     const handleStatusChange = async (id, newStatus) => {
@@ -85,7 +111,7 @@ const AdminCustomerCare = () => {
             const data = await response.json();
 
             if (data.success) {
-                fetchQueries(search); // Refresh list
+                fetchQueries(search, currentPage, pageSize); // Maintain page
             } else {
                 alert(data.detail || 'Update failed');
             }
@@ -119,7 +145,7 @@ const AdminCustomerCare = () => {
 
             if (data.success) {
                 setAnsweringId(null);
-                fetchQueries(search); // Refresh list
+                fetchQueries(search, currentPage, pageSize); // Maintain page
             } else {
                 alert(data.detail || 'Update failed');
             }
@@ -146,76 +172,93 @@ const AdminCustomerCare = () => {
             {error && <div className="error-message">{error}</div>}
 
             {loading ? (
-                <div>Loading...</div>
+                <div className="loading-container">Loading...</div>
             ) : (
-                <div className="admin-table-container">
-                    <table className="admin-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>User</th>
-                                <th>Category</th>
-                                <th>Message</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {queries.map((q) => (
-                                <tr key={q.id}>
-                                    <td>{new Date(q.created_at).toLocaleDateString()}</td>
-                                    <td>
-                                        {q.user_name}<br />
-                                        <small>{q.user_email}</small><br />
-                                        <small>Points: {q.user_points}</small>
-                                    </td>
-                                    <td>{q.category}</td>
-                                    <td>
-                                        <div style={{ maxWidth: '300px', whiteSpace: 'pre-wrap' }}>
-                                            {q.message}
-                                            {q.attachment_url && (
-                                                <div style={{ marginTop: '5px' }}>
-                                                    <a href={q.attachment_url} target="_blank" rel="noopener noreferrer">View Attachment</a>
-                                                </div>
-                                            )}
-                                        </div>
-                                        {q.admin_response && (
-                                            <div style={{ marginTop: '10px', padding: '10px', background: '#f9f9f9', borderLeft: '3px solid #3498db' }}>
-                                                <strong>Admin:</strong> {q.admin_response}
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <span className={`status-badge status-${q.status}`}>
-                                            {q.status}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {q.status !== 'closed' && (
-                                            <>
-                                                <button
-                                                    className="admin-btn-primary"
-                                                    style={{ fontSize: '0.8rem', padding: '5px 10px', marginBottom: '5px' }}
-                                                    onClick={() => handleAnswer(q.id)}
-                                                >
-                                                    Answer
-                                                </button>
-                                                <br />
-                                                <button
-                                                    className="admin-btn-secondary"
-                                                    style={{ fontSize: '0.8rem', padding: '5px 10px' }}
-                                                    onClick={() => handleStatusChange(q.id, 'closed')}
-                                                >
-                                                    Close
-                                                </button>
-                                            </>
-                                        )}
-                                    </td>
+                <>
+                    <div className="admin-table-container">
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>User</th>
+                                    <th>Category</th>
+                                    <th>Message</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {queries.length > 0 ? (
+                                    queries.map((q) => (
+                                        <tr key={q.id}>
+                                            <td>{new Date(q.created_at).toLocaleDateString()}</td>
+                                            <td>
+                                                {q.user_name}<br />
+                                                <small>{q.user_email}</small><br />
+                                                <small>Points: {q.user_points}</small>
+                                            </td>
+                                            <td>{q.category}</td>
+                                            <td>
+                                                <div style={{ maxWidth: '300px', whiteSpace: 'pre-wrap' }}>
+                                                    {q.message}
+                                                    {q.attachment_url && (
+                                                        <div style={{ marginTop: '5px' }}>
+                                                            <a href={q.attachment_url} target="_blank" rel="noopener noreferrer">View Attachment</a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {q.admin_response && (
+                                                    <div style={{ marginTop: '10px', padding: '10px', background: '#f9f9f9', borderLeft: '3px solid #3498db', color: '#333' }}>
+                                                        <strong>Admin:</strong> {q.admin_response}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <span className={`status-badge status-${q.status}`}>
+                                                    {q.status}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {q.status !== 'closed' && (
+                                                    <>
+                                                        <button
+                                                            className="admin-btn-primary"
+                                                            style={{ fontSize: '0.8rem', padding: '5px 10px', marginBottom: '5px' }}
+                                                            onClick={() => handleAnswer(q.id)}
+                                                        >
+                                                            Answer
+                                                        </button>
+                                                        <br />
+                                                        <button
+                                                            className="admin-btn-secondary"
+                                                            style={{ fontSize: '0.8rem', padding: '5px 10px' }}
+                                                            onClick={() => handleStatusChange(q.id, 'closed')}
+                                                        >
+                                                            Close
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="6" style={{ textAlign: 'center', padding: '2rem' }}>No queries found</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <Pagination
+                        currentPage={currentPage}
+                        totalPages={pagination.total_pages}
+                        totalCount={pagination.total_count}
+                        pageSize={pageSize}
+                        onPageChange={handlePageChange}
+                        onPageSizeChange={handlePageSizeChange}
+                    />
+                </>
             )}
 
             {answeringId && (

@@ -73,7 +73,11 @@ async def shutdown_event():
 # Serve index.html at root
 @app.get("/")
 async def read_index():
-    static_dir = 'static'
+    if getattr(sys, 'frozen', False):
+        static_dir = os.path.join(sys._MEIPASS, 'static')
+    else:
+        static_dir = 'static'
+        
     index_path = os.path.join(static_dir, 'index.html')
     if os.path.exists(index_path):
         return FileResponse(index_path)

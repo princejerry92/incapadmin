@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowUpRight, ArrowDownLeft, Search, Filter, Download, MoreHorizontal, Trash2, Share2, AlertCircle } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Search, Filter, Download, MoreHorizontal, Trash2, Share2, AlertCircle, Printer } from 'lucide-react';
 import dashboardAPI from '../services/dashboardAPI';
 
-const TransactionHistory = ({ limit, onReportIssue }) => {
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
+const TransactionHistory = ({ limit, onReportIssue, transactions: propTransactions, showHeader = true, showSeeAll = true, showTitle = true }) => {
+  const [transactions, setTransactions] = useState(propTransactions || []);
+  const [loading, setLoading] = useState(propTransactions ? false : true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -12,13 +12,23 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(null);
   const [expanded, setExpanded] = useState(false);
-  const [allTransactions, setAllTransactions] = useState([]);
+  const [allTransactions, setAllTransactions] = useState(propTransactions || []);
+  const [isExporting, setIsExporting] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
 
   useEffect(() => {
-    fetchTransactions();
-  }, [limit]);
+    if (propTransactions) {
+      setTransactions(propTransactions);
+      setAllTransactions(propTransactions);
+      setLoading(false);
+    } else {
+      fetchTransactions();
+    }
+  }, [limit, propTransactions]);
 
   const fetchTransactions = async (fetchLimit = limit) => {
+    if (propTransactions) return; // Don't fetch if transactions are provided as props
+
     try {
       setLoading(true);
       const response = await dashboardAPI.getTransactionHistory(fetchLimit);
@@ -97,6 +107,46 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
     }
   };
 
+  const fetchUserProfile = async () => {
+    try {
+      const response = await dashboardAPI.getUserInfo();
+      if (response.success) {
+        setUserProfile(response.user);
+      }
+    } catch (err) {
+      console.error('Error fetching user profile for print:', err);
+    }
+  };
+
+  const handlePrintHistory = async () => {
+    if (isExporting) return;
+
+    try {
+      setIsExporting(true);
+      await dashboardAPI.exportTransactionHistory();
+      setIsExporting(false);
+    } catch (err) {
+      console.error('Export History failed:', err);
+      setIsExporting(false);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const handlePrintReceipt = async (transaction) => {
+    if (isExporting) return;
+
+    try {
+      setIsExporting(true);
+      await dashboardAPI.exportTransactionReceipt(transaction.transaction_id);
+      setIsExporting(false);
+      setActionMenuOpen(null);
+    } catch (err) {
+      console.error('Export Receipt failed:', err);
+      setIsExporting(false);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
   const handleReport = (transaction) => {
     if (onReportIssue) {
       onReportIssue({
@@ -150,38 +200,49 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="p-6 border-b border-gray-100">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className="text-lg font-bold text-gray-900">Transaction History</h2>
+      {showHeader && (
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {showTitle && <h2 className="text-lg font-bold text-gray-900">Transaction History</h2>}
 
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search transactions..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 text-gray-900 placeholder-gray-500 bg-white"
-              />
-            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search transactions..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 text-gray-900 placeholder-gray-500 bg-white"
+                />
+              </div>
 
-            <div className="relative">
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white cursor-pointer text-gray-900"
+              <div className="relative">
+                <select
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  className="pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white cursor-pointer text-gray-900"
+                >
+                  <option value="all">All Types</option>
+                  <option value="payment">Deposits</option>
+                  <option value="withdrawal">Withdrawals</option>
+                  <option value="interest">Interest</option>
+                </select>
+                <Filter className="w-4 h-4 absolute right-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+
+              <button
+                onClick={handlePrintHistory}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all shadow-md disabled:bg-blue-300"
               >
-                <option value="all">All Types</option>
-                <option value="payment">Deposits</option>
-                <option value="withdrawal">Withdrawals</option>
-                <option value="interest">Interest</option>
-              </select>
-              <Filter className="w-4 h-4 absolute right-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+                {isExporting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Printer className="w-4 h-4" />}
+                <span className="hidden sm:inline">Print Report</span>
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -253,6 +314,12 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
                           <Share2 className="w-4 h-4 mr-2" /> Share Receipt
                         </button>
                         <button
+                          onClick={() => handlePrintReceipt(transaction)}
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                        >
+                          <Printer className="w-4 h-4 mr-2" /> Print Receipt
+                        </button>
+                        <button
                           onClick={() => handleReport(transaction)}
                           className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                         >
@@ -281,7 +348,7 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
       </div>
 
       {/* See All / See Less Button */}
-      {limit && transactions.length === limit && !expanded && (
+      {showSeeAll && limit && transactions.length === limit && !expanded && (
         <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 text-center">
           <button
             onClick={toggleExpanded}
@@ -293,7 +360,7 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
         </div>
       )}
 
-      {expanded && (
+      {showSeeAll && expanded && (
         <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 text-center">
           <button
             onClick={toggleExpanded}
@@ -319,7 +386,7 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-6 bg-white">
               <div className="flex justify-center mb-6">
                 <div className={`p-4 rounded-full ${selectedTransaction.transaction_type === 'withdrawal' ? 'bg-red-100' : 'bg-green-100'}`}>
                   {selectedTransaction.transaction_type === 'withdrawal' ?
@@ -359,13 +426,20 @@ const TransactionHistory = ({ limit, onReportIssue }) => {
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mt-6 pt-4 border-t border-gray-200">
+              <div className="grid grid-cols-4 gap-2 mt-6 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => handleShare(selectedTransaction)}
                   className="flex flex-col items-center justify-center p-3 hover:bg-blue-50 rounded-lg transition-colors text-blue-600 hover:text-blue-700 border border-transparent hover:border-blue-200"
                 >
                   <Share2 className="w-6 h-6 mb-2" />
                   <span className="text-sm font-medium">Share</span>
+                </button>
+                <button
+                  onClick={() => handlePrintReceipt(selectedTransaction)}
+                  className="flex flex-col items-center justify-center p-3 hover:bg-amber-50 rounded-lg transition-colors text-amber-600 hover:text-amber-700 border border-transparent hover:border-amber-200"
+                >
+                  <Printer className="w-6 h-6 mb-2" />
+                  <span className="text-sm font-medium">Print</span>
                 </button>
                 <button
                   onClick={() => handleReport(selectedTransaction)}

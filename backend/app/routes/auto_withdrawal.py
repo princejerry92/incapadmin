@@ -20,7 +20,7 @@ async def process_due_dates(
     # For now, we'll allow the request to proceed
     try:
         interest_service = InterestCalculationService()
-        result = interest_service.check_and_process_due_dates()
+        result = interest_service.check_and_process_all_due_dates()
         
         if not result['success']:
             raise HTTPException(status_code=500, detail=result['error'])

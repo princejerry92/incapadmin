@@ -466,70 +466,10 @@ class InterestCalculationService:
                     'error': 'Failed to update spending account'
                 }
             
-            # Record withdrawal transaction (avoid inserting fields not present in schema)
-            # Build a minimal transaction record that matches the transactions table schema.
-            import uuid
-
-            # Attach investor details (email/account_number) so Postgres doesn't reject NOT NULL constraints
-            investor_resp = self.supabase.table('investors').select('email, account_number, portfolio_type, investment_type').eq('id', investor_id).execute()
-            investor_data = getattr(investor_resp, 'data', [])
-
-            investor_email = None
-            investor_account_number = None
-            portfolio_type = None
-            investment_type = None
-
-            if investor_data and len(investor_data) > 0:
-                inv = investor_data[0]
-                investor_email = inv.get('email')
-                investor_account_number = inv.get('account_number')
-                portfolio_type = inv.get('portfolio_type')
-                investment_type = inv.get('investment_type')
-
-                transaction_record = {
-                    'investor_id': investor_id,
-                    'email': investor_email,
-                    'account_number': investor_account_number,
-                    'portfolio_type': portfolio_type,
-                    'investment_type': investment_type,
-                    'amount': withdrawal_amount,
-                    'transaction_type': 'withdrawal',  # Use the canonical 'withdrawal' type
-                    'withdrawal_requested': True,      # Indicate that this is a withdrawal request
-                    'withdraw_status': 'pending',
-                    'withdrawal_amount': str(withdrawal_amount),
-                    'withdrawal_timestamp': datetime.now().isoformat(),
-                    'transaction_id': f"USRWD-{uuid.uuid4().hex[:12].upper()}"
-                }
-
-            transaction_response = self.supabase.table('transactions').insert(transaction_record).execute()
-            transaction_data_result = getattr(transaction_response, 'data', [])
-
-            # If inserting a transaction record failed, attempt to roll back the spending account update
-            if not transaction_data_result:
-                try:
-                    revert_data = {
-                        'balance': current_balance,
-                        'total_withdrawn': current_total_withdrawn,
-                        'updated_at': datetime.now().isoformat()
-                    }
-                    self.supabase.table('spending_accounts').update(revert_data).eq('id', account['id']).execute()
-                except Exception as rollback_error:
-                    # Log the rollback failure and return a descriptive error
-                    return {
-                        'success': False,
-                        'error': f'Failed to record withdrawal transaction: {getattr(transaction_response, "error", "unknown error")} and failed to rollback spending account update: {str(rollback_error)}'
-                    }
-
-                return {
-                    'success': False,
-                    'error': f'Failed to record withdrawal transaction: {getattr(transaction_response, "error", "unknown error")}'
-                }
-
             return {
                 'success': True,
                 'withdrawn_amount': withdrawal_amount,
-                'new_balance': new_balance,
-                'transaction_id': transaction_data_result[0].get('id') if transaction_data_result else None
+                'new_balance': new_balance
             }
             
         except Exception as e:

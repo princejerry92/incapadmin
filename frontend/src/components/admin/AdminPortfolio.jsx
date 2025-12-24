@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './Admin.css';
+import Pagination from './Pagination';
 
 const AdminPortfolio = () => {
     const [portfolios, setPortfolios] = useState([]);
@@ -9,14 +10,26 @@ const AdminPortfolio = () => {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
 
-    const fetchPortfolios = async (searchQuery = '') => {
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
+    const [pagination, setPagination] = useState({
+        total_count: 0,
+        total_pages: 1
+    });
+
+    const fetchPortfolios = async (searchQuery = '', page = 1, limit = 20) => {
         setLoading(true);
         try {
             const token = localStorage.getItem('adminToken');
             const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-            const url = searchQuery
-                ? `${API_BASE_URL}/admin/portfolio?search=${searchQuery}`
-                : `${API_BASE_URL}/admin/portfolio`;
+
+            const params = new URLSearchParams();
+            if (searchQuery) params.append('search', searchQuery);
+            params.append('page', page);
+            params.append('limit', limit);
+
+            const url = `${API_BASE_URL}/admin/portfolio?${params.toString()}`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -25,6 +38,9 @@ const AdminPortfolio = () => {
 
             if (data.success) {
                 setPortfolios(data.data);
+                if (data.pagination) {
+                    setPagination(data.pagination);
+                }
             } else {
                 setError(data.detail || 'Failed to fetch portfolios');
             }
@@ -36,12 +52,22 @@ const AdminPortfolio = () => {
     };
 
     useEffect(() => {
-        fetchPortfolios();
-    }, []);
+        fetchPortfolios(search, currentPage, pageSize);
+    }, [currentPage, pageSize]);
 
     const handleSearch = (e) => {
         e.preventDefault();
-        fetchPortfolios(search);
+        setCurrentPage(1);
+        fetchPortfolios(search, 1, pageSize);
+    };
+
+    const handlePageChange = (newPage) => {
+        setCurrentPage(newPage);
+    };
+
+    const handlePageSizeChange = (newSize) => {
+        setPageSize(newSize);
+        setCurrentPage(1);
     };
 
     const handleEdit = (portfolio) => {
@@ -66,7 +92,7 @@ const AdminPortfolio = () => {
 
             if (data.success) {
                 setEditingId(null);
-                fetchPortfolios(search); // Refresh list
+                fetchPortfolios(search, currentPage, pageSize); // Maintain current page
             } else {
                 alert(data.detail || 'Update failed');
             }
@@ -93,46 +119,63 @@ const AdminPortfolio = () => {
             {error && <div className="error-message">{error}</div>}
 
             {loading ? (
-                <div>Loading...</div>
+                <div className="loading-container">Loading...</div>
             ) : (
-                <div className="admin-table-container">
-                    <table className="admin-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Phone</th>
-                                <th>Portfolio Type</th>
-                                <th>Investment Type</th>
-                                <th>Bank Details</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {portfolios.map((p) => (
-                                <tr key={p.id}>
-                                    <td>{p.first_name} {p.surname}</td>
-                                    <td>{p.email}</td>
-                                    <td>{p.phone_number}</td>
-                                    <td>{p.portfolio_type}</td>
-                                    <td>{p.investment_type}</td>
-                                    <td>
-                                        <small>
-                                            {p.bank_name}<br />
-                                            {p.bank_account_number}<br />
-                                            {p.bank_account_name}
-                                        </small>
-                                    </td>
-                                    <td>
-                                        <button className="admin-btn-primary" onClick={() => handleEdit(p)}>
-                                            Update
-                                        </button>
-                                    </td>
+                <>
+                    <div className="admin-table-container">
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Portfolio Type</th>
+                                    <th>Investment Type</th>
+                                    <th>Bank Details</th>
+                                    <th>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {portfolios.length > 0 ? (
+                                    portfolios.map((p) => (
+                                        <tr key={p.id}>
+                                            <td>{p.first_name} {p.surname}</td>
+                                            <td>{p.email}</td>
+                                            <td>{p.phone_number}</td>
+                                            <td>{p.portfolio_type}</td>
+                                            <td>{p.investment_type}</td>
+                                            <td>
+                                                <small>
+                                                    {p.bank_name}<br />
+                                                    {p.bank_account_number}<br />
+                                                    {p.bank_account_name}
+                                                </small>
+                                            </td>
+                                            <td>
+                                                <button className="admin-btn-primary" onClick={() => handleEdit(p)}>
+                                                    Update
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>No portfolios found</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <Pagination
+                        currentPage={currentPage}
+                        totalPages={pagination.total_pages}
+                        totalCount={pagination.total_count}
+                        pageSize={pageSize}
+                        onPageChange={handlePageChange}
+                        onPageSizeChange={handlePageSizeChange}
+                    />
+                </>
             )}
 
             {editingId && (
