@@ -629,12 +629,31 @@ class DashboardAPI {
   }
 
   // PDF Export methods
+  // PDF Export methods - Return raw response for custom handling
   async exportTransactionReceipt(transactionId) {
-    return this.downloadFile(`/dashboard/export/receipt/${transactionId}`, `receipt_${transactionId}.pdf`);
+    if (!this.token) {
+      this.token = localStorage.getItem('session_token') || localStorage.getItem('adminToken');
+    }
+    return fetch(`${API_BASE_URL}/dashboard/export/receipt/${transactionId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Accept': 'application/pdf'
+      }
+    });
   }
 
   async exportTransactionHistory() {
-    return this.downloadFile('/dashboard/export/history', 'transaction_history.pdf');
+    if (!this.token) {
+      this.token = localStorage.getItem('session_token') || localStorage.getItem('adminToken');
+    }
+    return fetch(`${API_BASE_URL}/dashboard/export/history`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Accept': 'application/pdf'
+      }
+    });
   }
 }
 

@@ -118,33 +118,60 @@ const TransactionHistory = ({ limit, onReportIssue, transactions: propTransactio
     }
   };
 
+  const downloadPdf = async (fetchFn, filename) => {
+    try {
+      const response = await fetchFn();
+      if (!response.ok) throw new Error('Download failed');
+      const buffer = await response.arrayBuffer();
+
+      // Check for pywebview and use specific API
+      if (window.pywebview && window.pywebview.api) {
+        // Convert buffer to base64
+        const base64String = btoa(
+          new Uint8Array(buffer)
+            .reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+
+        const result = await window.pywebview.api.save_file(filename, base64String);
+        if (!result.success) {
+          if (result.reason !== 'cancelled') {
+            throw new Error(result.error || 'Native save failed');
+          }
+        }
+      } else {
+        // Standard Browser Download as fallback
+        const blob = new Blob([buffer], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Could not download PDF. Please try again.');
+    }
+  };
+
   const handlePrintHistory = async () => {
     if (isExporting) return;
-
-    try {
-      setIsExporting(true);
-      await dashboardAPI.exportTransactionHistory();
-      setIsExporting(false);
-    } catch (err) {
-      console.error('Export History failed:', err);
-      setIsExporting(false);
-      alert('Failed to generate PDF. Please try again.');
-    }
+    setIsExporting(true);
+    await downloadPdf(() => dashboardAPI.exportTransactionHistory(), 'transaction-history.pdf');
+    setIsExporting(false);
   };
 
   const handlePrintReceipt = async (transaction) => {
     if (isExporting) return;
-
-    try {
-      setIsExporting(true);
-      await dashboardAPI.exportTransactionReceipt(transaction.transaction_id);
-      setIsExporting(false);
-      setActionMenuOpen(null);
-    } catch (err) {
-      console.error('Export Receipt failed:', err);
-      setIsExporting(false);
-      alert('Failed to generate PDF. Please try again.');
-    }
+    setIsExporting(true);
+    await downloadPdf(
+      () => dashboardAPI.exportTransactionReceipt(transaction.transaction_id),
+      `receipt-${transaction.transaction_id}.pdf`
+    );
+    setIsExporting(false);
+    setActionMenuOpen(null);
   };
 
   const handleReport = (transaction) => {
